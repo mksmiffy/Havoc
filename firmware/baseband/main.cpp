@@ -253,6 +253,16 @@ protected:
 		);
 	}
 
+	void feed_channel_spectrum_and_post_immediately(
+		const buffer_c16_t channel,
+		const uint32_t filter_pass_frequency,
+		const uint32_t filter_stop_frequency
+	) {
+		channel_filter_pass_frequency = filter_pass_frequency;
+		channel_filter_stop_frequency = filter_stop_frequency;
+		post_channel_spectrum_message(channel);
+	}
+
 	void fill_audio_buffer(const buffer_s16_t audio) {
 		auto audio_buffer = audio::dma::tx_empty_buffer();;
 		for(size_t i=0; i<audio_buffer.count; i++) {
@@ -281,10 +291,12 @@ private:
 
 	void post_channel_spectrum_message(const buffer_c16_t data) {
 		if( !channel_spectrum_request_update ) {
-			channel_spectrum_request_update = true;
-			std::copy(&data.p[0], &data.p[data.count], channel_spectrum.begin());
-			channel_spectrum_sampling_rate = data.sampling_rate;
-			events_flag(EVT_MASK_SPECTRUM);
+			if( data.count >= channel_spectrum.size() ) {
+				channel_spectrum_request_update = true;
+				std::copy(&data.p[0], &data.p[channel_spectrum.size()], channel_spectrum.begin());
+				channel_spectrum_sampling_rate = data.sampling_rate;
+				events_flag(EVT_MASK_SPECTRUM);
+			}
 		}
 	}
 
@@ -425,7 +437,15 @@ public:
 
 		// TODO: Feed channel_stats post-decimation data?
 		feed_channel_stats(channel);
-		//feed_channel_spectrum(channel);
+
+		// TODO: Hacky way to subvert the channel decimator and only
+		// perform spectrum analysis on data when the prior block of data
+		// is consumed.
+		feed_channel_spectrum_and_post_immediately(
+			channel,
+			200e3,		// TODO: Bogus value
+			250e3		// TODO: Bogus value
+		);
 
 		/* 768kHz complex<int16_t>[512]
 		 * -> FM demodulation
